@@ -1,0 +1,28 @@
+# pisugar
+---
+version: 0.4
+
+# Global environment variables
+env:
+  NAME: api
+  IMAGE: example/api
+
+networks:
+  zero:
+    hosts:
+      - pi@192.168.1.9
+
+commands:
+  install_base:
+    desc: Install some base packages I always need
+    run: sudo apt install -y vim zsh git tmux
+
+  install_pisugar_webui:
+    desc: Download and install the pisugar web UI
+    stdin: true
+    run: wget http://cdn.pisugar.com/release/Pisugar-power-manager.sh -O- | sed 's|sudo dpkg|sudo DEBIAN_FRONTEND=readline dpkg|g' | sudo bash
+
+targets:
+  all:
+    - install_base
+    - install_pisugar_webui
