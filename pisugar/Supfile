@@ -1,0 +1,202 @@
+# pisugar
+#
+# In raspi-config:
+# - Expand filesystem
+# - Enable SPI
+# - Set Locale
+#
+---
+version: 0.4
+
+# Global environment variables
+env:
+  NAME: api
+  IMAGE: example/api
+
+networks:
+  zero:
+    hosts:
+      - pi@192.168.1.9
+
+commands:
+  #################
+  # Base
+  #################
+  fix_locales:
+    desc: Generate selected locales so I don't get plagued with warnings
+    run: sudo locale-gen
+
+  set_tz:
+    desc: I don't live in London
+    run: >
+        echo "America/Los_Angeles" | sudo tee /etc/timezone &&
+        sudo dpkg-reconfigure --frontend noninteractive tzdata
+
+  upgrade:
+    desc: Upgrade system via apt
+    run: sudo apt update && sudo apt upgrade -y
+
+  install_base:
+    desc: Install some base packages I always need
+    run: >
+      sudo apt install -y neovim zsh git tmux ripgrep &&
+      sudo pip3 install neovim
+
+  install_py3:
+    desc: Setup Python3
+    run: sudo apt install -y python3 python3-pip
+
+  setup_environment:
+    desc: Checks my homedir out of Github, set up zsh, etc.
+    run: >
+      [ ! -d ~/.homedir ] && git clone --recurse-submodules https://github.com/chrismetcalf/homedir.git .homedir;
+      ~/.homedir/bin/gitfix &&
+      sudo chsh --shell /usr/bin/zsh pi &&
+      sudo apt install -y autojump fzf thefuck &&
+      rm .xinitrc .xmobarrc .Xsession &&
+      nvim +PlugInstall +qall
+
+  enable_vnc:
+    desc: Set up VNC server
+    run: >
+      sudo systemctl enable vncserver-x11-serviced &&
+      sudo systemctl start vncserver-x11-serviced
+
+  set_screen_resolution:
+    desc: Force a larger screen resolution (reboot required after)
+    run: > 
+      sudo sed -i 's/.*hdmi_group.*/hdmi_group=2/' /boot/config.txt &&
+      sudo sed -i 's/.*hdmi_mode.*/hdmi_mode=16/' /boot/config.txt &&
+      sudo sed -i 's/.*hdmi_force_hotplug.*/hdmi_force_hotplug=1/' /boot/config.txt &&
+      echo "Reboot required before resolution will be reflected!"
+
+  #################
+  # PiSugar
+  #################
+  install_pisugar_webui:
+    desc: Download and install the pisugar web UI
+    stdin: true
+    run: >
+      echo "### YOU WILL BE ASKED TO SELECT A PISUGAR MODEL AND THE SCRIPT WILL PAUSE UNTIL YOU RESPOND ###" &&
+      wget http://cdn.pisugar.com/release/Pisugar-power-manager.sh -O- | sed 's|sudo dpkg|sudo DEBIAN_FRONTEND=readline dpkg|g' | sudo bash
+
+  #################
+  # auto-hotspot
+  #################
+  copy_hostapd_conf:
+    desc: Copy over the hostapd conf file
+    upload:
+      - src: ./hostapd.conf
+        dst: /tmp/hostapd.conf
+
+  setup_autohotspot:
+    desc: Set up the auto-hotspot script
+    run: >
+      sudo apt install -y hostapd dnsmasq network-manager &&
+      sudo systemctl disable hostapd &&
+      sudo systemctl disable dnsmasq &&
+      sudo cp /tmp/hostapd.conf /etc/hostapd/hostapd.conf
+
+
+  #################
+  # Ham
+  #################
+  ham_install_pkgs:
+    desc: Install basic digital mode ham utils
+    run: sudo apt install -y wsjtx flrig trustedqsl
+
+  install_js8call:
+    desc: Download and install JS8Call
+    run: >
+      sudo apt install libgfortran3 &&
+      wget -O /tmp/js8call.deb http://files.js8call.com/2.2.0/js8call_2.2.0_armhf.deb &&
+      sudo dpkg -i /tmp/js8call.deb
+
+  #################
+  # Email
+  #################
+  email_dependencies:
+    desc: Set up Pat email dependencies
+    run: >
+      sudo apt update &&
+      sudo apt install -y golang xastir direwolf
+
+  email_pat:
+    desc: Set up Pat itself
+    run: go get github.com/la5nta/pat
+
+  #################
+  # ePaperHat
+  #################
+  install_bcm2835:
+    desc: Download and install BCM2835 libraries
+    run: >
+      cd /usr/src &&
+      sudo wget http://www.airspayce.com/mikem/bcm2835/bcm2835-1.60.tar.gz &&
+      sudo tar -zxvf bcm2835-1.60.tar.gz &&
+      cd bcm2835-1.60/ &&
+      sudo ./configure &&
+      sudo make &&
+      sudo make check &&
+      sudo make install
+
+  install_epaper_py:
+    desc: Install Python libraries for ePaper hat
+    run: >
+      sudo apt-get install wiringpi &&
+      sudo apt-get install python3-pip &&
+      sudo apt-get install python3-pil &&
+      sudo apt-get install python3-numpy &&
+      sudo pip3 install RPi.GPIO &&
+      sudo pip3 install spidev
+
+  copy_status_script:
+    desc: Copy over our ePaper status script
+    upload:
+      - src: epaper_status.py
+        dst: /home/pi/src/github.com/e-Paper/RaspberryPi_JetsonNano/python/examples/
+
+  test_status_script:
+    desc: Run our status script once to test it
+    run: sudo python3 ~/src/github.com/e-Paper/RaspberryPi_JetsonNano/python/examples/epaper_status.py
+
+  clone_demo_code:
+    desc: Clone the demo code off github
+    run: git clone https://github.com/waveshare/e-Paper ~/src/github.com/e-Paper
+
+  run_demo_code:
+    desc: Run the demo script to test a display
+    run: sudo python3 ~/src/github.com/e-Paper/RaspberryPi_JetsonNano/python/examples/epd_2in13b_V3_test.py
+
+  #################
+  # Util
+  #################
+  reboot:
+    desc: Force a reboot
+    run: sudo reboot
+
+targets:
+  base:
+    - fix_locales
+    - set_tz
+    - upgrade
+    - install_base
+    - install_py3
+    - setup_environment
+    - enable_vnc
+    - set_screen_resolution
+
+  pisugar:
+    - install_pisugar_webui
+
+  ham:
+    - install_digital_ham
+    - install_js8call
+
+  test_epaper:
+    - copy_status_script
+    - test_status_script
+
+  epaper:
+    - install_bcm2835
+    - install_epaper_py
