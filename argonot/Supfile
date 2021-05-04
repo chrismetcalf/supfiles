@@ -1,0 +1,168 @@
+# pisugar
+#
+# In raspi-config:
+# - Expand filesystem
+# - Enable SPI
+# - Set Locale
+#
+---
+version: 0.4
+
+# Global environment variables
+env:
+  NAME: api
+  IMAGE: example/api
+
+networks:
+  argonot:
+    hosts:
+      - pi@192.168.1.13
+
+commands:
+  #################
+  # Base
+  #################
+  base_fix_locales:
+    desc: Generate selected locales so I don't get plagued with warnings
+    run: sudo locale-gen
+
+  base_set_tz:
+    desc: I don't live in London
+    run: >
+        echo "America/Los_Angeles" | sudo tee /etc/timezone &&
+        sudo dpkg-reconfigure --frontend noninteractive tzdata
+
+  base_upgrade:
+    desc: Upgrade system via apt
+    run: sudo apt update && sudo apt upgrade -y
+
+  base_install:
+    desc: Install some base packages I always need
+    run: >
+      sudo apt install -y vim zsh git tmux ripgrep
+
+  #################
+  # auto-hotspot
+  #################
+  hs_mv_wpasupplicant:
+    desc: Make sure wpasupplicant only operates on wlan0
+    run: sudo mv /etc/wpa_supplicant/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+    
+  hs_install_hotspot_pkgs:
+    desc: Set up the hotspot
+    run: >
+      sudo apt install -y hostapd dnsmasq
+
+  hs_upload_hostapd_conf:
+    desc: Copy over the hostapd conf file
+    upload:
+      - src: ./hostapd.conf
+        dst: /tmp/
+
+  hs_setup_hostapd:
+    desc: Set up hostapd config
+    run: >
+      sudo cp /tmp/hostapd.conf /etc/hostapd/hostapd.conf &&
+      echo "DAEMON_CONF=\"/etc/hostapd/hostapd.conf\"" | sudo tee -a /etc/default/hostapd &&
+      sudo systemctl unmask hostapd &&
+      sudo systemctl enable hostapd
+
+  # TODO: nohook seems to kill wireless...
+  hs_setup_dhcpcd:
+    desc: Set up dhcpcd
+    run: >
+      echo "interface wlan1" | sudo tee -a /etc/dhcpcd.conf &&
+      echo "static ip_address=192.168.2.1/24" | sudo tee -a /etc/dhcpcd.conf && 
+      sudo service dhcpcd restart
+
+  hs_setup_dnsmasq:
+    desc: Set up dnsmasq
+    run: >
+      echo "interface=wlan1" | sudo tee -a /etc/dnsmasq.conf &&
+      echo "  dhcp-range=192.168.2.2,192.168.2.20,255.255.255.0,24h" | sudo tee -a /etc/dnsmasq.conf
+      sudo service dnsmasq restart
+
+  hs_setup_interface:
+    desc: Make our wlan1 interface static
+    run: >
+      sudo ifdown wlan1
+      echo "auto wlan1" | sudo tee /etc/network/interfaces.d/wlan1 &&
+      echo "iface wlan1 inet static" | sudo tee -a /etc/network/interfaces.d/wlan1 &&
+      echo "  address 192.168.2.1" | sudo tee -a /etc/network/interfaces.d/wlan1 &&
+      echo "  netmask 255.255.255.0" | sudo tee -a /etc/network/interfaces.d/wlan1 &&
+      sudo ifup wlan1
+
+  #################
+  # argo
+  #################
+  argo_install_deps:
+    desc: Install golang to build argo
+    run: sudo apt install -y golang yarnpkg
+
+  argo_checkout:
+    desc: Check argo out of github
+    run: git clone https://github.com/timmathews/argo.git src/github.com/argo
+
+  argo_build:
+    desc: Build argo with golang
+    run: >
+      cd ~/src/github.com/argo &&
+      ./build.sh &&
+      sudo ./build.sh --install
+
+  argo_copy_conf:
+    desc: Copy over the argo config
+    upload:
+      - src: ./argo.conf
+        dst: /tmp/
+
+  argo_install_conf:
+    desc: Copy argo.conf into place
+    run: sudo mv /tmp/argo.conf /etc
+
+  argo_copy_wrapper:
+    desc: Copy over argo wrapper
+    upload:
+      - src: ./argo_wrapper
+        dst: /tmp/
+
+  argo_install_wrapper:
+    desc: Copy the wrapper in place
+    run: >
+      sudo cp /tmp/argo_wrapper /usr/bin/argo_wrapper &&
+      sudo chmod +x /usr/bin/argo_wrapper
+
+  argo_run_at_boot:
+    desc: Puts argo into rc.local so it starts at boot
+    run: sudo sed -i '/^exit 0/i /usr/bin/argo_wrapper &' /etc/rc.local
+
+  #################
+  # Util
+  #################
+  reboot:
+    desc: Force a reboot
+    run: sudo reboot
+
+targets:
+  base:
+    - base_fix_locales
+    - base_set_tz
+    - base_upgrade
+    - base_install
+
+  hotspot:
+    - hs_mv_wpasupplicant
+    - hs_install_hotspot_pkgs
+    - hs_upload_hostapd_conf
+    - hs_setup_hostapd
+    - hs_setup_dhcpcd
+    - hs_setup_dnsmasq
+    - hs_setup_interface
+
+  argo:
+    - argo_install_deps
+    - argo_checkout
+    - argo_build
+    - argo_copy_conf
+    - argo_install_conf
+    - argo_run_at_boot

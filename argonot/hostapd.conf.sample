@@ -1,0 +1,21 @@
+driver=nl80211
+# the interface used by the AP
+interface=wlan1
+# "g" simply means 2.4GHz band
+hw_mode=g
+# the channel to use
+channel=6
+# the country code
+country_code=US
+
+# the name of the AP
+ssid=gifthorse27
+ignore_broadcast_ssid=0
+# 1=wpa, 2=wep, 3=both
+auth_algs=1
+# WPA2 only
+wpa=2
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=TKIP
+rsn_pairwise=CCMP
+wpa_passphrase=youandthehorseyourodeinon

@@ -1,0 +1,7 @@
+#!/bin/sh
+
+cd /home/pi/src/github.com/argo
+while true;
+do 
+  /usr/bin/argo -log INFO -config /etc/argo.conf 2>&1 /tmp/argo.log
+done
